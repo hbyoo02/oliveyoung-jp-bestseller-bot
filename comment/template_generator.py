@@ -2,10 +2,12 @@ from storage.db import OVERALL_CATEGORY
 
 
 def generate_template_comment(facts: dict) -> str:
-    """LLM 없이 규칙 기반으로 코멘트를 조합하는 폴백 생성기.
+    """규칙 기반으로 코멘트를 조합한다 (외부 API 불필요).
 
-    Claude API 키가 없을 때만 쓰인다 - SNS/경쟁사 순위 조사 같은 서술형 분석은
-    LLM 단계 전용이라 여기서는 데이터 요약만 담백하게 표시한다.
+    카테고리별 상시 베스트셀러/기획전 영향/트렌드는 데이터로 확정 가능해서 자동 서술하지만,
+    특이 신규 진입 상품의 SNS 바이럴 여부나 큐텐/라쿠텐 순위 같은 건 코드가 확인할 방법이
+    없으므로 사실을 지어내지 않고 "확인 필요" 라고만 표시한다 - 필요하면 사람이 직접 검색해서
+    보완하는 걸 전제로 한다.
     """
     lines = [f"[{facts['date_label']}]", ""]
 
@@ -25,6 +27,7 @@ def generate_template_comment(facts: dict) -> str:
 
     for entry in facts["notable_entries"]:
         lines.append(f"• {entry['brand']} {entry['product_name']} : {entry['rank']}위로 신규 진입.")
+        lines.append("◦ SNS 바이럴 여부, 큐텐/라쿠텐 순위는 자동 확인이 안 돼서 직접 확인이 필요합니다.")
 
     if len(lines) == 2:
         lines.append("• 오늘은 특별히 눈에 띄는 순위 변동이 없었습니다.")

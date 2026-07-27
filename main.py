@@ -10,9 +10,8 @@ from analysis.seasonal_trend import find_seasonal_trends
 from analysis.utils import norm_key
 from comment.build_facts import build_facts
 from comment.export_web import export_latest_comment
-from comment.llm_generator import generate_llm_comment
 from comment.template_generator import generate_template_comment
-from config.settings import ANTHROPIC_API_KEY, CONFIG, DB_PATH, DOCS_DIR, LOG_DIR, SLACK_WEBHOOK_URL
+from config.settings import CONFIG, DB_PATH, DOCS_DIR, LOG_DIR, SLACK_WEBHOOK_URL
 from notify.slack import send_to_slack
 from scraper.bestseller_scraper import fetch_bestsellers, fetch_category_rankings
 from scraper.promotion_scraper import fetch_promotion_products, fetch_promotions
@@ -94,7 +93,7 @@ def run() -> None:
         today, always_bestsellers_by_category, promotion_impacts, seasonal_trends, notable_entries
     )
 
-    comment_text = _generate_comment(facts)
+    comment_text = generate_template_comment(facts)
     logger.info("생성된 코멘트:\n%s", comment_text)
 
     generated_at = datetime.now(KST).isoformat()
@@ -108,15 +107,6 @@ def run() -> None:
         logger.info("Slack 전송 완료")
     else:
         logger.error("Slack 전송 실패 (코멘트는 DB에 백업됨: date=%s)", today)
-
-
-def _generate_comment(facts: dict) -> str:
-    if ANTHROPIC_API_KEY:
-        try:
-            return generate_llm_comment(facts, ANTHROPIC_API_KEY)
-        except Exception:
-            logger.exception("Claude API 코멘트 생성 실패, 템플릿 기반으로 대체합니다.")
-    return generate_template_comment(facts)
 
 
 if __name__ == "__main__":
