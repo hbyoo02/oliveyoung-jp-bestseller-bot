@@ -14,12 +14,17 @@ crawl:
     # -> brand_product_list_path 로 그 브랜드의 전체 상품을 가져온다 (실측 확인됨).
     product_detail_path: "/product/detail-data"
     brand_product_list_path: "/display/page/brand/product-list"
-  # 이 파라미터들이 로케일(일본/JPY)을 결정한다. accParam=110 으로 브라우저에서 확인함.
+  # dlvCntryCode/mrgnCntryCode/acesCntryCode 가 "일본 시장"(랭킹 대상, JPY 가격 기준)을
+  # 결정한다. accParam=110 으로 브라우저에서 확인함.
+  # display_lang_code 는 이것과 별개로 브랜드/상품명 "표시 언어"만 결정한다 - 실측 결과
+  # curLang/lang 쿠키를 "en"으로 바꿔도 랭킹 순서/가격은 그대로고 이름만 공식 영어 표기로
+  # 바뀐다(예: "リジュラン" -> "REJURAN"). langCode 는 일본 시장 판단용으로 "jp" 유지.
   locale_params:
     langCode: "jp"
     dlvCntryCode: "110"
     mrgnCntryCode: "110"
     acesCntryCode: "00"
+    display_lang_code: "en"
   max_rank: 100
   request_timeout_sec: 15
   max_retries: 3
@@ -79,52 +84,54 @@ thresholds:
     max_items: 3         # 후보가 많아도 실제 코멘트에는 이만큼만(가장 순위 높은 순) 서술형으로 다룸
 
 # 상품명/브랜드명에 포함된 키워드로 계절·상황 속성을 태깅하는 규칙.
-# 사이트가 일본어이므로 한국어/일본어/영어 키워드를 함께 등록해두고,
-# 실제 상품명을 보면서 계속 보완해야 합니다. (아래는 실제 수집된 상품명에서 관찰된
-# 표현을 반영해 보완한 목록 - 예: "スージング"(진정)은 실제 15위 상품에서 발견됨)
+# 브랜드/상품명을 공식 영어 표기로 받기 때문에(display_lang_code: en) 영어 키워드가
+# 주력이고, 한국어/일본어는 보조로 남겨둔다. 실제 상품명을 보면서 계속 보완해야 합니다.
 tags:
   워터프루프:
     - 워터프루프
     - waterproof
+    - water-proof
+    - long-lasting
     - ウォータープルーフ
-    - 崩れない
-    - 落ちない
-    - にじまない
   쿨링:
     - 쿨링
     - cooling
+    - cool
+    - refreshing
     - クール
-    - クーリング
-    - 冷感
-    - ひんやり
   피지_모공:
     - 피지
     - 모공
-    - 皮脂
+    - pore
+    - sebum
+    - tightening
     - 毛穴
-    - テカリ
-    - タイトニング
   보습:
     - 보습
     - 수분
+    - moistur
+    - hydrat
     - 保湿
-    - うるおい
-    - 潤い
   선케어:
     - 선크림
     - 자외선
-    - UV
+    - sun cream
+    - sunscreen
+    - suncare
+    - uv
     - 日焼け止め
-    - サンケア
   진정:
     - 진정
+    - soothing
+    - calming
     - スージング
-    - 鎮静
-    - カーミング
-    - レッド
   미백:
     - 미백
     - 화이트닝
+    - whitening
+    - brightening
+    - tone up
+    - tone-up
     - 美白
     - ブライトニング
     - トーンアップ

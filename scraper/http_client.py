@@ -34,14 +34,16 @@ def _request(url: str, cfg: dict, method: str, params: dict | None = None, json_
         "Accept": "application/json, text/plain, */*",
         "Referer": crawl_cfg["base_url"] + "/",
     }
-    # 실측 결과 langCode/dlvCntryCode 쿼리 파라미터만으로는 로케일이 결정되지 않고
-    # (쿠키 없이 호출하면 영어로 응답함) 아래 쿠키가 있어야 일본어/JPY 응답이 온다.
+    # 실측 결과 쿼리 파라미터만으로는 로케일이 결정되지 않고 쿠키가 있어야 한다.
+    # dlvCntry 가 "어느 시장 랭킹/가격이냐"를 결정하고(일본 유지),
+    # curLang/lang 은 그와 독립적으로 "브랜드/상품명 표시 언어"만 결정한다 - display_lang_code
+    # 를 "en"으로 주면 랭킹 순서·가격은 그대로고 이름만 공식 영어 표기로 나온다(실측 확인).
     locale = crawl_cfg["locale_params"]
     cookies = {
         "dlvCntry": locale["dlvCntryCode"],
         "currency": "JPY",
-        "curLang": locale["langCode"],
-        "lang": locale["langCode"],
+        "curLang": locale["display_lang_code"],
+        "lang": locale["display_lang_code"],
     }
 
     last_error = None
