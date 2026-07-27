@@ -25,10 +25,10 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python main.py
 
-      - name: Commit updated data & logs
+      - name: Commit updated data & site
         run: |
           git config user.name "oy-bot"
           git config user.email "oy-bot@users.noreply.github.com"
-          git add data/ logs/
+          git add data/ docs/latest.json
           git diff --cached --quiet || git commit -m "chore: daily bestseller data $(date -u +%Y-%m-%d)"
           git push

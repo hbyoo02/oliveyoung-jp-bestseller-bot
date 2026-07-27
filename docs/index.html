@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>올리브영 JP 베스트셀러 코멘트</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f5;
+    --card: #ffffff;
+    --text: #1c1f1c;
+    --muted: #6b746b;
+    --border: #e2e5e1;
+    --accent: #2f7a3d;
+    --accent-text: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --card: #1d2024;
+      --text: #eef0ec;
+      --muted: #9aa39a;
+      --border: #2c3036;
+      --accent: #4caf60;
+      --accent-text: #0c130d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  }
+  .card {
+    width: 100%;
+    max-width: 640px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+  }
+  h1 {
+    font-size: 1.25rem;
+    margin: 0 0 4px;
+  }
+  .sub {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin: 0 0 20px;
+  }
+  button.primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    border-radius: 10px;
+    padding: 12px 20px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.primary:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  button.primary:hover:not(:disabled) {
+    filter: brightness(1.05);
+  }
+  .result {
+    margin-top: 20px;
+    display: none;
+  }
+  .result.visible {
+    display: block;
+  }
+  .meta {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+  }
+  textarea {
+    width: 100%;
+    min-height: 260px;
+    resize: vertical;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    font-family: inherit;
+  }
+  .actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  button.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+  button.secondary:hover {
+    border-color: var(--accent);
+  }
+  .status {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-top: 20px;
+    min-height: 1.2em;
+  }
+  .status.error {
+    color: #d14343;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>올리브영 JP 베스트셀러</h1>
+    <p class="sub">매일 아침 자동 수집·분석된 베스트셀러 코멘트를 확인합니다.</p>
+
+    <button class="primary" id="loadBtn">오늘의 코멘트 확인하기</button>
+
+    <div class="result" id="result">
+      <p class="meta" id="meta"></p>
+      <textarea id="commentText" readonly></textarea>
+      <div class="actions">
+        <button class="secondary" id="copyBtn">복사하기</button>
+      </div>
+    </div>
+
+    <p class="status" id="status"></p>
+  </div>
+
+<script>
+  const loadBtn = document.getElementById('loadBtn');
+  const result = document.getElementById('result');
+  const meta = document.getElementById('meta');
+  const commentText = document.getElementById('commentText');
+  const copyBtn = document.getElementById('copyBtn');
+  const status = document.getElementById('status');
+
+  function formatGeneratedAt(iso) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+    } catch {
+      return iso;
+    }
+  }
+
+  loadBtn.addEventListener('click', async () => {
+    loadBtn.disabled = true;
+    status.textContent = '불러오는 중...';
+    status.classList.remove('error');
+    try {
+      const res = await fetch('./latest.json?_=' + Date.now());
+      if (!res.ok) throw new Error('latest.json 을 찾을 수 없습니다 (아직 첫 실행 전일 수 있어요).');
+      const data = await res.json();
+
+      meta.textContent = `${data.date} 기준 · 생성 시각 ${formatGeneratedAt(data.generated_at)}`;
+      commentText.value = data.comment;
+      result.classList.add('visible');
+      status.textContent = '';
+    } catch (err) {
+      status.textContent = err.message || '불러오기에 실패했습니다.';
+      status.classList.add('error');
+    } finally {
+      loadBtn.disabled = false;
+    }
+  });
+
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(commentText.value);
+      status.textContent = '복사되었습니다.';
+      status.classList.remove('error');
+    } catch {
+      commentText.select();
+      document.execCommand('copy');
+      status.textContent = '복사되었습니다.';
+      status.classList.remove('error');
+    }
+  });
+</script>
+</body>
+</html>

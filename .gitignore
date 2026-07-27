@@ -4,8 +4,11 @@ __pycache__/
 .venv/
 venv/
 
-# 로컬 테스트로 생성된 데이터/로그. GitHub Actions가 매일 실행 결과를 커밋해 쌓는다.
-data/*.db
+# bot.log 는 디버깅용이라 커밋하지 않는다 (계속 append 되므로 남기면 무한히 커짐).
 logs/*.log
+
+# data/*.db, docs/latest.json 은 gitignore 하지 않는다: GitHub Actions가 매일 실행 후
+# 이 파일들을 git add로 명시 커밋해서 이력을 쌓고 웹페이지가 최신 코멘트를 읽는 구조라,
+# 여기서 무시하면 "git add data/" 가 조용히 아무것도 못 넣는다.
 
 .claude/settings.local.json

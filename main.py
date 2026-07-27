@@ -9,9 +9,10 @@ from analysis.promotion_impact import find_promotion_impacts
 from analysis.seasonal_trend import find_seasonal_trends
 from analysis.utils import norm_key
 from comment.build_facts import build_facts
+from comment.export_web import export_latest_comment
 from comment.llm_generator import generate_llm_comment
 from comment.template_generator import generate_template_comment
-from config.settings import ANTHROPIC_API_KEY, CONFIG, DB_PATH, LOG_DIR, SLACK_WEBHOOK_URL
+from config.settings import ANTHROPIC_API_KEY, CONFIG, DB_PATH, DOCS_DIR, LOG_DIR, SLACK_WEBHOOK_URL
 from notify.slack import send_to_slack
 from scraper.bestseller_scraper import fetch_bestsellers
 from scraper.promotion_scraper import fetch_promotion_products, fetch_promotions
@@ -88,7 +89,9 @@ def run() -> None:
     comment_text = _generate_comment(facts)
     logger.info("생성된 코멘트:\n%s", comment_text)
 
-    save_comment(DB_PATH, today, comment_text, datetime.now(KST).isoformat())
+    generated_at = datetime.now(KST).isoformat()
+    save_comment(DB_PATH, today, comment_text, generated_at)
+    export_latest_comment(DOCS_DIR, today, comment_text, generated_at)
 
     if not SLACK_WEBHOOK_URL:
         logger.info("SLACK_WEBHOOK_URL 미설정 - Slack 전송 없이 코멘트만 생성/저장했습니다.")
