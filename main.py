@@ -1,4 +1,5 @@
 import logging
+import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -29,6 +30,12 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 def setup_logging() -> None:
+    # Windows 콘솔 기본 코드페이지(cp949 등)는 일본어를 못 그려 콘솔 출력이 깨지므로 강제 UTF-8.
+    # logging.StreamHandler() 기본값은 stderr 이므로 둘 다 재설정해야 한다.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",

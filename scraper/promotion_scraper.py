@@ -1,3 +1,4 @@
+import html
 import logging
 import re
 from datetime import date
@@ -45,9 +46,13 @@ def fetch_promotions(cfg: dict) -> list[dict]:
 
     promotions: dict[str, dict] = {}
     for corner in corners:
+        if not corner:
+            continue
         if target_corners and corner.get("dispPageConrNo") not in target_corners:
             continue
         for set_val in (corner.get("setContsMap") or {}).values():
+            if not set_val:
+                continue
             entry = _extract_entry(set_val, max_duration)
             if entry:
                 promotions[entry["promo_name"]] = entry
@@ -55,10 +60,20 @@ def fetch_promotions(cfg: dict) -> list[dict]:
     return _apply_manual_overrides(list(promotions.values()))
 
 
+def _flatten(value) -> list[dict]:
+    """IMAGE/TEXT 필드는 응답에 따라 list, {contsTgtNo: [...]} dict, 또는 아예 없을 수 있다."""
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return [item for group in value.values() for item in group]
+    return []
+
+
 def _extract_entry(set_val: dict, max_duration_days: int) -> dict | None:
-    images = set_val.get("IMAGE") or []
-    text_groups = set_val.get("TEXT") or {}
-    texts = [t for group in text_groups.values() for t in group]
+    images = _flatten(set_val.get("IMAGE"))
+    texts = _flatten(set_val.get("TEXT"))
     items = images + texts
     if not items:
         return None
@@ -73,13 +88,13 @@ def _extract_entry(set_val: dict, max_duration_days: int) -> dict | None:
     name = None
     for img in images:
         alt = img.get("contsPcAltrnText") or img.get("contsAltrnText")
-        if alt:
+        if alt and _is_meaningful_name(alt):
             name = alt.strip()
             break
     if not name:
         for t in texts:
             cleaned = _strip_html(t.get("contsCont", ""))
-            if cleaned:
+            if cleaned and _is_meaningful_name(cleaned):
                 name = cleaned
                 break
     if not name:
@@ -102,7 +117,17 @@ def _ymd_to_iso(ymd: str | None) -> str | None:
 
 
 def _strip_html(text: str) -> str:
-    return _HTML_TAG_RE.sub(" ", text).replace("&amp;", "&").strip()
+    unescaped = html.unescape(text)
+    return _HTML_TAG_RE.sub(" ", unescaped).strip()
+
+
+_PUNCT_ONLY_RE = re.compile(r"^[\W_]+$", re.UNICODE)
+
+
+def _is_meaningful_name(name: str) -> bool:
+    """alt 텍스트가 '.' 같은 자리표시자가 아니라 실제 기획전명인지 대략적으로 걸러낸다."""
+    stripped = name.strip()
+    return len(stripped) >= 2 and not _PUNCT_ONLY_RE.match(stripped)
 
 
 def fetch_promotion_products(cfg: dict, promo: dict) -> list[dict]:
