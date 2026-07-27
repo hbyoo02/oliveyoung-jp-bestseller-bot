@@ -90,7 +90,9 @@ def run() -> None:
 
     save_comment(DB_PATH, today, comment_text, datetime.now(KST).isoformat())
 
-    if send_to_slack(SLACK_WEBHOOK_URL, comment_text):
+    if not SLACK_WEBHOOK_URL:
+        logger.info("SLACK_WEBHOOK_URL 미설정 - Slack 전송 없이 코멘트만 생성/저장했습니다.")
+    elif send_to_slack(SLACK_WEBHOOK_URL, comment_text):
         mark_comment_sent(DB_PATH, today)
         logger.info("Slack 전송 완료")
     else:
