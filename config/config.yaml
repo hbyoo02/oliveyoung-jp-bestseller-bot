@@ -1,0 +1,77 @@
+# 올리브영 JP 베스트셀러 모니터링 봇 설정
+# TODO: crawl.bestseller_url / crawl.promotion_url 과 각 selectors 는
+#       실제 페이지 구조를 확인한 뒤 채워 넣어야 합니다.
+
+crawl:
+  bestseller_url: ""   # 예: https://www.oliveyoung.jp/...
+  promotion_url: ""    # 기획전 목록 페이지 URL
+  max_rank: 100
+  request_timeout_sec: 15
+  max_retries: 3
+  retry_backoff_sec: 2
+
+  selectors:
+    bestseller:
+      # 상품 카드/행 하나를 가리키는 CSS 셀렉터
+      item: ""
+      rank: ""
+      brand: ""
+      product_name: ""
+    promotion:
+      list_item: ""
+      promo_name: ""
+      promo_link: ""
+      promo_period_text: ""   # "7/20(월)~8/3(월)" 같은 기간 텍스트
+      # 기획전 상세 페이지에서 대상 상품을 긁을 셀렉터 (선택, 없으면 수동 매핑 사용)
+      detail_product_item: ""
+      detail_brand: ""
+      detail_product_name: ""
+
+thresholds:
+  always_bestseller:
+    lookback_days: 14      # 최근 며칠을 볼지
+    min_days_in_top: 10    # 그 중 며칠 이상 top_rank 이내여야 하는지
+    top_rank: 10
+
+  promotion_impact:
+    min_elapsed_days: 1        # 기획전 시작 후 최소 경과일 (당일/익일 데이터는 판단 제외)
+    already_top_before_rank: 20   # "기획전 전에도 20위 이내"
+    surge_to_rank: 5               # "기획전 후 5위 이내로 상승"
+    midrange_before_max_rank: 100  # "기획전 전 100위 이내"
+    midrange_min_jump: 50          # "50위 이상 급상승"
+    new_entry_after_max_rank: 50   # "기획전 전 100위 밖 -> 후 상위권" 판단 기준 (상위권 = 이 순위 이내)
+
+  seasonal_trend:
+    top_n: 30           # 상위 몇 위 이내를 볼지
+    min_count: 3         # 동일 태그 상품이 몇 개 이상 동시 랭크되면 트렌드로 판단할지
+
+  notable_entry:
+    top_n: 30            # 이 순위 이내 신규 진입만 "특이 신규 진입"으로 취급
+
+# 상품명/브랜드명에 포함된 키워드로 계절·상황 속성을 태깅하는 규칙.
+# 사이트가 일본어이므로 한국어/일본어/영어 키워드를 함께 등록해두고,
+# 실제 상품명을 보면서 계속 보완해야 합니다.
+tags:
+  워터프루프:
+    - 워터프루프
+    - waterproof
+    - ウォータープルーフ
+  쿨링:
+    - 쿨링
+    - cooling
+    - クール
+    - 冷感
+  피지_모공:
+    - 피지
+    - 모공
+    - 皮脂
+    - 毛穴
+  보습:
+    - 보습
+    - 수분
+    - 保湿
+  선케어:
+    - 선크림
+    - 자외선
+    - UV
+    - 日焼け止め
