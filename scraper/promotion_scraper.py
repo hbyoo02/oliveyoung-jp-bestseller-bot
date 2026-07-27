@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from scraper.http_client import fetch_json
+from scraper.http_client import fetch_json, fetch_json_post, fetch_text
 
 logger = logging.getLogger("oy_bot.scraper")
 
@@ -130,18 +130,129 @@ def _is_meaningful_name(name: str) -> bool:
     return len(stripped) >= 2 and not _PUNCT_ONLY_RE.match(stripped)
 
 
+_PRDT_NO_RE = re.compile(r"prdtNo=([A-Za-z0-9]+)")
+
+
 def fetch_promotion_products(cfg: dict, promo: dict) -> list[dict]:
-    """기획전 대상 상품 목록. 랜딩 페이지 구조가 캠페인마다 달라 자동 수집하지 않고,
-    config/promotion_products_manual.yaml 수동 매핑만 사용한다.
+    """기획전 대상 상품 목록을 최대한 자동으로 알아낸다.
+
+    파이프라인 (실측으로 확인됨):
+      1. 기획전 랜딩 페이지 HTML에서 상품 링크(prdtNo)를 몇 개 뽑는다.
+      2. 그 상품들의 브랜드 ID(brandNo)를 /product/detail-data 로 조회한다.
+      3. 확인된 브랜드마다 /display/page/brand/product-list 로 그 브랜드의 전체 상품
+         목록을 가져온다 - 캠페인 페이지에 실제로 이미지가 걸린 몇 개 상품뿐 아니라
+         해당 브랜드가 랭킹에 올린 상품 전체를 "기획전 영향" 판단 대상으로 삼기 위함.
+
+    자동 수집이 실패하거나 상품이 하나도 안 잡히면 config/promotion_products_manual.yaml
+    수동 매핑으로 보완한다(자동 수집 결과와 합쳐진다).
     """
-    manual = _load_manual_promotion_products().get(promo["promo_name"])
-    if not manual:
+    manual = _load_manual_promotion_products().get(promo["promo_name"]) or []
+
+    auto: list[dict] = []
+    if promo.get("url"):
+        try:
+            auto = _resolve_products_via_landing_page(cfg, promo["url"])
+        except Exception:
+            logger.exception("'%s' 기획전 랜딩 페이지에서 상품 자동 수집 실패", promo["promo_name"])
+
+    merged = _merge_products(auto, manual)
+    if not merged:
         logger.info(
-            "'%s' 기획전의 대상 상품이 수동 매핑에 없습니다. "
-            "config/promotion_products_manual.yaml 에 추가해주세요.",
+            "'%s' 기획전의 대상 상품을 찾지 못했습니다 (자동 수집 결과 없음, 수동 매핑도 없음). "
+            "필요하면 config/promotion_products_manual.yaml 에 추가해주세요.",
             promo["promo_name"],
         )
-    return manual or []
+    else:
+        logger.info("'%s' 기획전 대상 상품 %d개 확보 (자동 %d + 수동 %d)",
+                     promo["promo_name"], len(merged), len(auto), len(manual))
+    return merged
+
+
+def _resolve_products_via_landing_page(cfg: dict, landing_url: str) -> list[dict]:
+    mapping_cfg = cfg["thresholds"]["promotion_product_mapping"]
+    max_lookups = mapping_cfg["max_products_to_resolve"]
+
+    page_html = fetch_text(landing_url, cfg)
+    prdt_nos = list(dict.fromkeys(_PRDT_NO_RE.findall(page_html)))  # dedupe, preserve order
+    if not prdt_nos:
+        return []
+
+    products: dict[str, dict] = {}
+    brand_nos: set[str] = set()
+    for prdt_no in prdt_nos[:max_lookups]:
+        try:
+            info = _fetch_product_brand_info(cfg, prdt_no)
+        except Exception:
+            logger.warning("prdtNo=%s 상품 정보 조회 실패, 건너뜁니다.", prdt_no)
+            continue
+        if info.get("brand_no"):
+            brand_nos.add(info["brand_no"])
+        if info.get("product_name"):
+            products[prdt_no] = {
+                "prdt_no": prdt_no,
+                "brand": info.get("brand") or "",
+                "product_name": info["product_name"],
+            }
+
+    for brand_no in brand_nos:
+        try:
+            for p in _fetch_brand_products(cfg, brand_no):
+                products[p["prdt_no"]] = p
+        except Exception:
+            logger.warning("brandNo=%s 브랜드 상품 목록 조회 실패, 건너뜁니다.", brand_no)
+
+    return list(products.values())
+
+
+def _fetch_product_brand_info(cfg: dict, prdt_no: str) -> dict:
+    crawl_cfg = cfg["crawl"]
+    url = crawl_cfg["base_url"] + crawl_cfg["api"]["product_detail_path"]
+    locale = crawl_cfg["locale_params"]
+    body = {
+        "prdtNo": prdt_no,
+        "langCode": locale["langCode"],
+        "dlvCntryCode": locale["dlvCntryCode"],
+        "mrgnCntryCode": locale["mrgnCntryCode"],
+        "acesCntryCode": locale["acesCntryCode"],
+    }
+    data = fetch_json_post(url, cfg, body)
+    product = (data or {}).get("product") or {}
+    return {
+        "brand_no": product.get("brandNo"),
+        "brand": product.get("brandName"),
+        "product_name": product.get("prdtName"),
+    }
+
+
+def _fetch_brand_products(cfg: dict, brand_no: str) -> list[dict]:
+    crawl_cfg = cfg["crawl"]
+    url = crawl_cfg["base_url"] + crawl_cfg["api"]["brand_product_list_path"]
+    locale = crawl_cfg["locale_params"]
+    mapping_cfg = cfg["thresholds"]["promotion_product_mapping"]
+
+    params = {
+        "pageNum": 1,
+        "rowsPerPage": mapping_cfg["brand_catalog_page_size"],
+        "brandNo": brand_no,
+        "prdtSortStdrCode": 10,
+        "acesCntryCode": locale["acesCntryCode"],
+    }
+    data = fetch_json(url, cfg, params=params)
+    items = (data or {}).get("list") or []
+
+    return [
+        {"prdt_no": item["prdtNo"], "brand": item.get("brandName") or "", "product_name": item["prdtName"]}
+        for item in items
+        if item.get("prdtNo") and item.get("prdtName")
+    ]
+
+
+def _merge_products(auto: list[dict], manual: list[dict]) -> list[dict]:
+    by_key: dict = {}
+    for p in auto + manual:
+        key = p.get("prdt_no") or (p.get("brand", ""), p.get("product_name", ""))
+        by_key[key] = p
+    return list(by_key.values())
 
 
 def _manual_paths():

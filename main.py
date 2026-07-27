@@ -93,7 +93,7 @@ def run() -> None:
         today, always_bestsellers_by_category, promotion_impacts, seasonal_trends, notable_entries
     )
 
-    comment_text = generate_template_comment(facts)
+    comment_text = generate_template_comment(facts, CONFIG)
     logger.info("생성된 코멘트:\n%s", comment_text)
 
     generated_at = datetime.now(KST).isoformat()

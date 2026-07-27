@@ -31,24 +31,39 @@ def find_promotion_impacts(db_path: str, as_of_date: str, cfg: dict) -> dict:
             continue
 
         before_date = get_latest_date_before(db_path, promo["start_date"])
-        before_rankings = _rankings_by_key(db_path, before_date) if before_date else {}
-        after_rankings = _rankings_by_key(db_path, as_of_date)
+        before_by_prdt, before_by_key = _rankings_lookups(db_path, before_date) if before_date else ({}, {})
+        after_by_prdt, after_by_key = _rankings_lookups(db_path, as_of_date)
 
         matched = []
+        seen_after_keys = set()  # 자동+수동 매핑이 같은 상품을 중복으로 잡는 경우 방지
         for p in products:
-            key = norm_key(p["brand"], p["product_name"])
-            rank_after = after_rankings.get(key)
-            if rank_after is None:
+            after = None
+            if p.get("prdt_no") and p["prdt_no"] in after_by_prdt:
+                after = after_by_prdt[p["prdt_no"]]
+            else:
+                key = norm_key(p["brand"], p["product_name"])
+                after = after_by_key.get(key)
+            if after is None:
                 continue
-            rank_before = before_rankings.get(key)
 
-            if _is_impact(rank_before, rank_after, thr):
+            dedupe_key = norm_key(after["brand"], after["product_name"])
+            if dedupe_key in seen_after_keys:
+                continue
+            seen_after_keys.add(dedupe_key)
+
+            if p.get("prdt_no") and p["prdt_no"] in before_by_prdt:
+                before = before_by_prdt[p["prdt_no"]]
+            else:
+                before = before_by_key.get(norm_key(after["brand"], after["product_name"]))
+            rank_before = before["rank"] if before else None
+
+            if _is_impact(rank_before, after["rank"], thr):
                 matched.append(
                     {
-                        "brand": p["brand"],
-                        "product_name": p["product_name"],
+                        "brand": after["brand"],
+                        "product_name": after["product_name"],
                         "rank_before": rank_before,
-                        "rank_after": rank_after,
+                        "rank_after": after["rank"],
                     }
                 )
 
@@ -74,8 +89,13 @@ def _is_impact(rank_before: int | None, rank_after: int, thr: dict) -> bool:
     return rank_after <= thr["new_entry_after_max_rank"]
 
 
-def _rankings_by_key(db_path: str, date_str: str) -> dict:
-    return {
-        norm_key(r["brand"], r["product_name"]): r["rank"]
-        for r in get_rankings(db_path, date_str)
-    }
+def _rankings_lookups(db_path: str, date_str: str) -> tuple[dict, dict]:
+    """(prdt_no -> row, norm_key -> row) 두 조회 테이블을 함께 만든다."""
+    by_prdt: dict = {}
+    by_key: dict = {}
+    for r in get_rankings(db_path, date_str):
+        row = {"rank": r["rank"], "brand": r["brand"], "product_name": r["product_name"]}
+        if r.get("prdt_no"):
+            by_prdt[r["prdt_no"]] = row
+        by_key[norm_key(r["brand"], r["product_name"])] = row
+    return by_prdt, by_key

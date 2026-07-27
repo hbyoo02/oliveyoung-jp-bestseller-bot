@@ -12,6 +12,18 @@ USER_AGENT = (
 
 
 def fetch_json(url: str, cfg: dict, params: dict | None = None):
+    return _request(url, cfg, method="GET", params=params).json()
+
+
+def fetch_text(url: str, cfg: dict, params: dict | None = None) -> str:
+    return _request(url, cfg, method="GET", params=params).text
+
+
+def fetch_json_post(url: str, cfg: dict, json_body: dict):
+    return _request(url, cfg, method="POST", json_body=json_body).json()
+
+
+def _request(url: str, cfg: dict, method: str, params: dict | None = None, json_body: dict | None = None):
     crawl_cfg = cfg["crawl"]
     timeout = crawl_cfg.get("request_timeout_sec", 15)
     max_retries = crawl_cfg.get("max_retries", 3)
@@ -35,12 +47,13 @@ def fetch_json(url: str, cfg: dict, params: dict | None = None):
     last_error = None
     for attempt in range(1, max_retries + 1):
         try:
-            resp = requests.get(
-                url, params=params, headers=headers, cookies=cookies, timeout=timeout
+            resp = requests.request(
+                method, url, params=params, json=json_body,
+                headers=headers, cookies=cookies, timeout=timeout,
             )
             resp.raise_for_status()
-            return resp.json()
-        except (requests.RequestException, ValueError) as e:
+            return resp
+        except requests.RequestException as e:
             last_error = e
             logger.warning("fetch failed (attempt %d/%d) for %s: %s", attempt, max_retries, url, e)
             if attempt < max_retries:

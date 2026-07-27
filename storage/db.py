@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS rankings (
     rank INTEGER NOT NULL,
     brand TEXT NOT NULL,
     product_name TEXT NOT NULL,
+    prdt_no TEXT,
     PRIMARY KEY (date, category, rank)
 );
 
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS promotion_products (
     promo_name TEXT NOT NULL,
     brand TEXT NOT NULL,
     product_name TEXT NOT NULL,
+    prdt_no TEXT,
     PRIMARY KEY (promo_name, brand, product_name),
     FOREIGN KEY (promo_name) REFERENCES promotions(promo_name)
 );
@@ -59,8 +61,8 @@ def save_rankings(db_path: str, date: str, category: str, items: list[dict]) -> 
     with _connect(db_path) as conn:
         conn.execute("DELETE FROM rankings WHERE date = ? AND category = ?", (date, category))
         conn.executemany(
-            "INSERT INTO rankings (date, category, rank, brand, product_name) "
-            "VALUES (:rank_date, :category, :rank, :brand, :product_name)",
+            "INSERT INTO rankings (date, category, rank, brand, product_name, prdt_no) "
+            "VALUES (:rank_date, :category, :rank, :brand, :product_name, :prdt_no)",
             [
                 {
                     "rank_date": date,
@@ -68,6 +70,7 @@ def save_rankings(db_path: str, date: str, category: str, items: list[dict]) -> 
                     "rank": item["rank"],
                     "brand": item["brand"],
                     "product_name": item["product_name"],
+                    "prdt_no": item.get("prdt_no"),
                 }
                 for item in items
             ],
@@ -77,7 +80,7 @@ def save_rankings(db_path: str, date: str, category: str, items: list[dict]) -> 
 def get_rankings(db_path: str, date: str, category: str = OVERALL_CATEGORY) -> list[dict]:
     with _connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT rank, brand, product_name FROM rankings "
+            "SELECT rank, brand, product_name, prdt_no FROM rankings "
             "WHERE date = ? AND category = ? ORDER BY rank", (date, category)
         ).fetchall()
         return [dict(r) for r in rows]
@@ -123,10 +126,11 @@ def save_promotions(db_path: str, promotions: list[dict]) -> None:
 
 def save_promotion_products(db_path: str, promo_name: str, products: list[dict]) -> None:
     with _connect(db_path) as conn:
+        conn.execute("DELETE FROM promotion_products WHERE promo_name = ?", (promo_name,))
         conn.executemany(
-            "INSERT OR IGNORE INTO promotion_products (promo_name, brand, product_name) "
-            "VALUES (?, ?, ?)",
-            [(promo_name, p["brand"], p["product_name"]) for p in products],
+            "INSERT OR IGNORE INTO promotion_products (promo_name, brand, product_name, prdt_no) "
+            "VALUES (?, ?, ?, ?)",
+            [(promo_name, p["brand"], p["product_name"], p.get("prdt_no")) for p in products],
         )
 
 
@@ -143,7 +147,7 @@ def get_active_promotions(db_path: str, as_of_date: str) -> list[dict]:
 def get_promotion_products(db_path: str, promo_name: str) -> list[dict]:
     with _connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT brand, product_name FROM promotion_products WHERE promo_name = ?",
+            "SELECT brand, product_name, prdt_no FROM promotion_products WHERE promo_name = ?",
             (promo_name,),
         ).fetchall()
         return [dict(r) for r in rows]

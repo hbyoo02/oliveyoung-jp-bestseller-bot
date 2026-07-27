@@ -68,6 +68,7 @@ def _fetch_ranking(cfg: dict, ctgr_no: str, max_rank: int) -> list[dict]:
                 "rank": idx,
                 "brand": item.get("brandName") or "",
                 "product_name": product_name,
+                "prdt_no": item.get("prdtNo"),
             }
         )
 
