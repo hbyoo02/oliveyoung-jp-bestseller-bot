@@ -1,10 +1,10 @@
 # 올리브영 JP 베스트셀러 모니터링 봇 설정
-# TODO: crawl.bestseller_url / crawl.promotion_url 과 각 selectors 는
+# TODO: crawl.bestseller_url / crawl.homepage_url 과 각 selectors 는
 #       실제 페이지 구조를 확인한 뒤 채워 넣어야 합니다.
 
 crawl:
   bestseller_url: ""   # 예: https://www.oliveyoung.jp/...
-  promotion_url: ""    # 기획전 목록 페이지 URL
+  homepage_url: ""     # 기획전 캐러셀 배너가 있는 홈페이지 URL (베스트셀러와 같은 도메인)
   max_rank: 100
   request_timeout_sec: 15
   max_retries: 3
@@ -17,15 +17,21 @@ crawl:
       rank: ""
       brand: ""
       product_name: ""
-    promotion:
-      list_item: ""
-      promo_name: ""
-      promo_link: ""
-      promo_period_text: ""   # "7/20(월)~8/3(월)" 같은 기간 텍스트
-      # 기획전 상세 페이지에서 대상 상품을 긁을 셀렉터 (선택, 없으면 수동 매핑 사용)
-      detail_product_item: ""
-      detail_brand: ""
-      detail_product_name: ""
+    # 기획전은 고정 URL 없이 홈 화면 캐러셀로 매일/매주 바뀌므로, 홈페이지에서
+    # 현재 떠 있는 배너 목록을 스캔해서 기획전명/링크를 추출한다.
+    # start_date 는 "봇이 이 배너를 처음 발견한 날짜"로 자동 기록된다(공식 시작일과
+    # 다를 수 있음 - 어긋나면 config/promotions_manual.yaml 에서 보정).
+    promotion_banner:
+      item: ""     # 캐러셀 슬라이드 하나
+      title: ""    # 배너 제목(기획전명)
+      link: ""     # 배너 클릭 시 이동하는 랜딩 페이지 링크(href)
+    # 기획전 랜딩 페이지에서 대상 상품을 긁을 셀렉터 (선택, best-effort).
+    # 캠페인마다 페이지 구조가 달라 실패하기 쉬우므로, 실패 시
+    # config/promotion_products_manual.yaml 수동 매핑이 우선 사용된다.
+    promotion_detail:
+      product_item: ""
+      brand: ""
+      product_name: ""
 
 thresholds:
   always_bestseller:
