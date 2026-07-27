@@ -2,14 +2,16 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
+OVERALL_CATEGORY = "전체"
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS rankings (
     date TEXT NOT NULL,
+    category TEXT NOT NULL,
     rank INTEGER NOT NULL,
     brand TEXT NOT NULL,
     product_name TEXT NOT NULL,
-    category TEXT,
-    PRIMARY KEY (date, rank)
+    PRIMARY KEY (date, category, rank)
 );
 
 CREATE TABLE IF NOT EXISTS promotions (
@@ -53,52 +55,55 @@ def _connect(db_path: str):
         conn.close()
 
 
-def save_rankings(db_path: str, date: str, items: list[dict]) -> None:
+def save_rankings(db_path: str, date: str, category: str, items: list[dict]) -> None:
     with _connect(db_path) as conn:
-        conn.execute("DELETE FROM rankings WHERE date = ?", (date,))
+        conn.execute("DELETE FROM rankings WHERE date = ? AND category = ?", (date, category))
         conn.executemany(
-            "INSERT INTO rankings (date, rank, brand, product_name, category) "
-            "VALUES (:rank_date, :rank, :brand, :product_name, :category)",
+            "INSERT INTO rankings (date, category, rank, brand, product_name) "
+            "VALUES (:rank_date, :category, :rank, :brand, :product_name)",
             [
                 {
                     "rank_date": date,
+                    "category": category,
                     "rank": item["rank"],
                     "brand": item["brand"],
                     "product_name": item["product_name"],
-                    "category": item.get("category"),
                 }
                 for item in items
             ],
         )
 
 
-def get_rankings(db_path: str, date: str) -> list[dict]:
+def get_rankings(db_path: str, date: str, category: str = OVERALL_CATEGORY) -> list[dict]:
     with _connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT rank, brand, product_name, category FROM rankings "
-            "WHERE date = ? ORDER BY rank", (date,)
+            "SELECT rank, brand, product_name FROM rankings "
+            "WHERE date = ? AND category = ? ORDER BY rank", (date, category)
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def get_available_dates(db_path: str, before_or_on: str | None = None, limit: int = 30) -> list[str]:
+def get_available_dates(
+    db_path: str, category: str = OVERALL_CATEGORY, before_or_on: str | None = None, limit: int = 30
+) -> list[str]:
     with _connect(db_path) as conn:
         if before_or_on:
             rows = conn.execute(
-                "SELECT DISTINCT date FROM rankings WHERE date <= ? "
-                "ORDER BY date DESC LIMIT ?", (before_or_on, limit)
+                "SELECT DISTINCT date FROM rankings WHERE category = ? AND date <= ? "
+                "ORDER BY date DESC LIMIT ?", (category, before_or_on, limit)
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT DISTINCT date FROM rankings ORDER BY date DESC LIMIT ?", (limit,)
+                "SELECT DISTINCT date FROM rankings WHERE category = ? "
+                "ORDER BY date DESC LIMIT ?", (category, limit)
             ).fetchall()
         return [r["date"] for r in rows]
 
 
-def get_latest_date_before(db_path: str, date: str) -> str | None:
+def get_latest_date_before(db_path: str, date: str, category: str = OVERALL_CATEGORY) -> str | None:
     with _connect(db_path) as conn:
         row = conn.execute(
-            "SELECT MAX(date) AS d FROM rankings WHERE date < ?", (date,)
+            "SELECT MAX(date) AS d FROM rankings WHERE date < ? AND category = ?", (date, category)
         ).fetchone()
         return row["d"] if row and row["d"] else None
 

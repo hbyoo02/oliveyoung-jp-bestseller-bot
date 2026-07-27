@@ -3,7 +3,7 @@ import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from analysis.always_bestseller import find_always_bestsellers
+from analysis.always_bestseller import find_always_bestsellers_by_category
 from analysis.notable_entries import find_notable_entries
 from analysis.promotion_impact import find_promotion_impacts
 from analysis.seasonal_trend import find_seasonal_trends
@@ -14,9 +14,10 @@ from comment.llm_generator import generate_llm_comment
 from comment.template_generator import generate_template_comment
 from config.settings import ANTHROPIC_API_KEY, CONFIG, DB_PATH, DOCS_DIR, LOG_DIR, SLACK_WEBHOOK_URL
 from notify.slack import send_to_slack
-from scraper.bestseller_scraper import fetch_bestsellers
+from scraper.bestseller_scraper import fetch_bestsellers, fetch_category_rankings
 from scraper.promotion_scraper import fetch_promotion_products, fetch_promotions
 from storage.db import (
+    OVERALL_CATEGORY,
     init_db,
     mark_comment_sent,
     save_comment,
@@ -56,11 +57,16 @@ def run() -> None:
 
     try:
         bestsellers = fetch_bestsellers(CONFIG)
-        save_rankings(DB_PATH, today, bestsellers)
-        logger.info("베스트셀러 %d개 저장 완료", len(bestsellers))
+        save_rankings(DB_PATH, today, OVERALL_CATEGORY, bestsellers)
+        logger.info("전체 베스트셀러 %d개 저장 완료", len(bestsellers))
     except Exception:
         logger.exception("베스트셀러 크롤링 실패. 오늘 분석을 진행할 수 없습니다.")
         return
+
+    category_rankings = fetch_category_rankings(CONFIG)
+    for category, items in category_rankings.items():
+        save_rankings(DB_PATH, today, category, items)
+    logger.info("카테고리별 베스트셀러 %d개 카테고리 저장 완료", len(category_rankings))
 
     try:
         promotions = fetch_promotions(CONFIG)
@@ -73,7 +79,7 @@ def run() -> None:
     except Exception:
         logger.exception("기획전 크롤링 실패. 기존 저장된 기획전 데이터로 계속 진행합니다.")
 
-    always_bestsellers = find_always_bestsellers(DB_PATH, today, CONFIG)
+    always_bestsellers_by_category = find_always_bestsellers_by_category(DB_PATH, today, CONFIG)
     promotion_impacts = find_promotion_impacts(DB_PATH, today, CONFIG)
     seasonal_trends = find_seasonal_trends(DB_PATH, today, CONFIG)
 
@@ -84,7 +90,9 @@ def run() -> None:
     }
     notable_entries = find_notable_entries(DB_PATH, today, CONFIG, exclude_keys=impacted_keys)
 
-    facts = build_facts(today, always_bestsellers, promotion_impacts, seasonal_trends, notable_entries)
+    facts = build_facts(
+        today, always_bestsellers_by_category, promotion_impacts, seasonal_trends, notable_entries
+    )
 
     comment_text = _generate_comment(facts)
     logger.info("생성된 코멘트:\n%s", comment_text)

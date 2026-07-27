@@ -25,4 +25,7 @@ def find_notable_entries(db_path: str, as_of_date: str, cfg: dict, exclude_keys:
             continue
         notable.append(r)
 
-    return notable
+    # 후보가 많아도(예: 첫 실행이라 이전 데이터가 없는 경우) 진짜 서술할 가치가 있는
+    # 상위 몇 개만 남긴다 - 순위가 높을수록 화제성이 크다고 보고 정렬.
+    notable.sort(key=lambda r: r["rank"])
+    return notable[: thr["max_items"]]
