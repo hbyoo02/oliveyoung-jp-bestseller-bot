@@ -16,6 +16,3 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 LOG_DIR = ROOT_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
-
-MANUAL_PROMOTION_PRODUCTS_PATH = ROOT_DIR / "config" / "promotion_products_manual.yaml"
-MANUAL_PROMOTIONS_PATH = ROOT_DIR / "config" / "promotions_manual.yaml"

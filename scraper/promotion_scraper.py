@@ -1,93 +1,150 @@
 import logging
+import re
+from datetime import date
 from pathlib import Path
 
 import yaml
 
-from scraper.http_client import fetch_soup
+from scraper.http_client import fetch_json
 
 logger = logging.getLogger("oy_bot.scraper")
 
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_NO_END_SENTINEL = "29991231"
 
-def fetch_promotion_banners(cfg: dict) -> list[dict]:
-    """홈페이지 캐러셀에서 현재 떠 있는 기획전 배너 목록을 수집한다.
 
-    기획전은 고정 URL이 없고 매일/매주 바뀌므로, 이 함수는 "오늘 시점에 어떤
-    기획전이 떠 있는가"만 알려준다. 시작/종료일 추적은 storage.db 의
-    upsert_promotion_seen / close_missing_promotions 가 첫 발견일 기준으로 처리한다.
+def fetch_promotions(cfg: dict) -> list[dict]:
+    """홈페이지 main-vue-data API에서 캐러셀 배너의 기획전 정보를 가져온다.
 
-    반환: [{"promo_name": str, "url": str | None}, ...]
+    각 배너는 CMS에 등록된 정확한 dispStartYmd/dispEndYmd(게시 시작/종료일)를 이미
+    갖고 있어 기간 텍스트를 파싱할 필요가 없다. 게시 기간이 thresholds.promotion_detection
+    .max_duration_days 보다 길면 상시성 배너로 보고 제외한다.
+
+    반환: [{"promo_name": str, "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "url": str|None}]
     """
     crawl_cfg = cfg["crawl"]
-    url = crawl_cfg["homepage_url"]
-    selectors = crawl_cfg["selectors"]["promotion_banner"]
+    url = crawl_cfg["base_url"] + crawl_cfg["api"]["main_vue_data_path"]
+    locale = crawl_cfg["locale_params"]
+    max_duration = cfg["thresholds"]["promotion_detection"]["max_duration_days"]
+    target_corners = set(crawl_cfg.get("promotion_corner_numbers") or [])
 
-    if not url:
-        raise ValueError("crawl.homepage_url 이 config.yaml 에 설정되지 않았습니다.")
-    if not selectors.get("item"):
-        raise ValueError("crawl.selectors.promotion_banner.item 이 설정되지 않았습니다.")
+    params = {
+        "previewDate": "",
+        "encKey": "",
+        "encText": "",
+        "acesCntryCode": locale["acesCntryCode"],
+        "accParam": "",
+        "langCode": locale["langCode"],
+        "dispPageNo": "",
+        "mrgnCntryCode": locale["mrgnCntryCode"],
+        "dlvCntryCode": locale["dlvCntryCode"],
+    }
 
-    soup = fetch_soup(url, cfg)
-    banners = []
-    for item in soup.select(selectors["item"]):
-        title_el = item.select_one(selectors.get("title", ""))
-        title = title_el.get_text(strip=True) if title_el else None
-        if not title:
+    data = fetch_json(url, cfg, params=params)
+    corners = data.get("cornerList", []) if isinstance(data, dict) else []
+
+    promotions: dict[str, dict] = {}
+    for corner in corners:
+        if target_corners and corner.get("dispPageConrNo") not in target_corners:
             continue
+        for set_val in (corner.get("setContsMap") or {}).values():
+            entry = _extract_entry(set_val, max_duration)
+            if entry:
+                promotions[entry["promo_name"]] = entry
 
-        link_el = item.select_one(selectors.get("link", "")) or item
-        link = link_el.get("href") if link_el else None
-        if link and link.startswith("/"):
-            link = _join_url(url, link)
+    return _apply_manual_overrides(list(promotions.values()))
 
-        banners.append({"promo_name": title, "url": link})
 
-    return banners
+def _extract_entry(set_val: dict, max_duration_days: int) -> dict | None:
+    images = set_val.get("IMAGE") or []
+    text_groups = set_val.get("TEXT") or {}
+    texts = [t for group in text_groups.values() for t in group]
+    items = images + texts
+    if not items:
+        return None
+
+    start_date = _ymd_to_iso(next((i.get("dispStartYmd") for i in items if i.get("dispStartYmd")), None))
+    end_date = _ymd_to_iso(next((i.get("dispEndYmd") for i in items if i.get("dispEndYmd")), None))
+    if not start_date or not end_date:
+        return None  # 날짜 정보 없는 섹션(상시 카테고리 바로가기 등)은 기획전으로 취급하지 않음
+    if (date.fromisoformat(end_date) - date.fromisoformat(start_date)).days > max_duration_days:
+        return None  # 장기간 게시되는 상시성 배너로 간주하고 제외
+
+    name = None
+    for img in images:
+        alt = img.get("contsPcAltrnText") or img.get("contsAltrnText")
+        if alt:
+            name = alt.strip()
+            break
+    if not name:
+        for t in texts:
+            cleaned = _strip_html(t.get("contsCont", ""))
+            if cleaned:
+                name = cleaned
+                break
+    if not name:
+        return None
+
+    promo_url = next((i.get("contsUrl") for i in items if i.get("contsUrl")), None)
+    if promo_url and promo_url.startswith("/"):
+        promo_url = "https://global.oliveyoung.com" + promo_url
+
+    return {"promo_name": name, "start_date": start_date, "end_date": end_date, "url": promo_url}
+
+
+def _ymd_to_iso(ymd: str | None) -> str | None:
+    if not ymd or len(ymd) != 8 or ymd == _NO_END_SENTINEL:
+        return None
+    try:
+        return date(int(ymd[:4]), int(ymd[4:6]), int(ymd[6:8])).isoformat()
+    except ValueError:
+        return None
+
+
+def _strip_html(text: str) -> str:
+    return _HTML_TAG_RE.sub(" ", text).replace("&amp;", "&").strip()
 
 
 def fetch_promotion_products(cfg: dict, promo: dict) -> list[dict]:
-    """기획전 랜딩 페이지에서 대상 브랜드/상품 목록을 best-effort 로 수집한다.
-
-    셀렉터가 없거나 페이지 구조가 안 맞아 실패하면 수동 매핑 파일을 사용한다.
+    """기획전 대상 상품 목록. 랜딩 페이지 구조가 캠페인마다 달라 자동 수집하지 않고,
+    config/promotion_products_manual.yaml 수동 매핑만 사용한다.
     """
-    selectors = cfg["crawl"]["selectors"]["promotion_detail"]
     manual = _load_manual_promotion_products().get(promo["promo_name"])
-
-    if not selectors.get("product_item") or not promo.get("url"):
-        if manual:
-            return manual
+    if not manual:
         logger.info(
-            "'%s' 기획전은 자동 수집 셀렉터/URL이 없고 수동 매핑도 없습니다. "
+            "'%s' 기획전의 대상 상품이 수동 매핑에 없습니다. "
             "config/promotion_products_manual.yaml 에 추가해주세요.",
             promo["promo_name"],
         )
-        return []
-
-    try:
-        soup = fetch_soup(promo["url"], cfg)
-    except Exception as e:
-        logger.warning("기획전 랜딩 페이지 수집 실패 (%s): %s", promo["promo_name"], e)
-        return manual or []
-
-    products = []
-    for item in soup.select(selectors["product_item"]):
-        brand_el = item.select_one(selectors.get("brand", ""))
-        name_el = item.select_one(selectors.get("product_name", ""))
-        brand = brand_el.get_text(strip=True) if brand_el else ""
-        name = name_el.get_text(strip=True) if name_el else None
-        if name:
-            products.append({"brand": brand, "product_name": name})
-
-    return products or (manual or [])
+    return manual or []
 
 
-def _join_url(base_url: str, path: str) -> str:
-    from urllib.parse import urljoin
-    return urljoin(base_url, path)
+def _manual_paths():
+    root = Path(__file__).resolve().parent.parent / "config"
+    return root / "promotions_manual.yaml", root / "promotion_products_manual.yaml"
+
+
+def _apply_manual_overrides(promotions: list[dict]) -> list[dict]:
+    promo_path, _ = _manual_paths()
+    if not promo_path.exists():
+        return promotions
+
+    with open(promo_path, "r", encoding="utf-8") as f:
+        overrides = yaml.safe_load(f) or {}
+
+    by_name = {p["promo_name"]: p for p in promotions}
+    for name, override in overrides.items():
+        base = by_name.get(name, {"promo_name": name, "start_date": None, "end_date": None, "url": None})
+        base.update({k: v for k, v in override.items() if v is not None})
+        by_name[name] = base
+
+    # 시작일이 없는 항목은 만들 수 없으므로 제외
+    return [p for p in by_name.values() if p.get("start_date")]
 
 
 def _load_manual_promotion_products() -> dict:
-    path = Path(__file__).resolve().parent.parent / "config" / "promotion_products_manual.yaml"
-    if not path.exists():
+    _, products_path = _manual_paths()
+    if not products_path.exists():
         return {}
-    with open(path, "r", encoding="utf-8") as f:
+    with open(products_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}

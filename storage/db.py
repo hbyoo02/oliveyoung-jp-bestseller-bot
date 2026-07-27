@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS promotions (
     promo_name TEXT PRIMARY KEY,
     start_date TEXT NOT NULL,
     end_date TEXT,
-    last_seen_date TEXT NOT NULL,
     url TEXT
 );
 
@@ -104,80 +103,17 @@ def get_latest_date_before(db_path: str, date: str) -> str | None:
         return row["d"] if row and row["d"] else None
 
 
-def upsert_promotion_seen(db_path: str, promo_name: str, today: str, url: str | None) -> None:
-    """오늘 홈페이지 배너에서 발견된 기획전을 기록한다.
-
-    처음 보는 기획전이면 start_date=today 로 새로 생성하고, 이미 있던 기획전이면
-    (재개된 경우 포함) last_seen_date 만 갱신하고 end_date 는 다시 NULL 로 되돌린다.
-    """
+def save_promotions(db_path: str, promotions: list[dict]) -> None:
+    """기획전 목록을 upsert한다. start_date/end_date 는 CMS API가 제공하는 정확한 게시
+    기간(또는 config/promotions_manual.yaml 의 수동 보정값)을 그대로 사용한다."""
     with _connect(db_path) as conn:
-        conn.execute(
-            "INSERT INTO promotions (promo_name, start_date, end_date, last_seen_date, url) "
-            "VALUES (?, ?, NULL, ?, ?) "
+        conn.executemany(
+            "INSERT INTO promotions (promo_name, start_date, end_date, url) "
+            "VALUES (:promo_name, :start_date, :end_date, :url) "
             "ON CONFLICT(promo_name) DO UPDATE SET "
-            "last_seen_date=excluded.last_seen_date, end_date=NULL, url=excluded.url",
-            (promo_name, today, today, url),
+            "start_date=excluded.start_date, end_date=excluded.end_date, url=excluded.url",
+            promotions,
         )
-
-
-def close_missing_promotions(db_path: str, seen_promo_names: set[str], today: str) -> None:
-    """오늘 배너 목록에 더 이상 보이지 않는 기획전을 마지막으로 확인된 날짜로 마감 처리한다."""
-    with _connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT promo_name, last_seen_date FROM promotions WHERE end_date IS NULL"
-        ).fetchall()
-        for row in rows:
-            if row["promo_name"] not in seen_promo_names:
-                conn.execute(
-                    "UPDATE promotions SET end_date = ? WHERE promo_name = ?",
-                    (row["last_seen_date"], row["promo_name"]),
-                )
-
-
-def apply_promotion_manual_overrides(db_path: str, overrides: dict, today: str) -> None:
-    """config/promotions_manual.yaml 의 수동 보정값을 적용한다.
-
-    이미 배너 스캔으로 발견된 기획전이면 start_date/end_date/url 을 덮어쓰고,
-    스캔에 잡히지 않은(예: 앱 전용 등) 기획전이면 start_date 가 있을 때만 새로 만든다.
-    """
-    with _connect(db_path) as conn:
-        for name, override in overrides.items():
-            start_date = override.get("start_date")
-            end_date = override.get("end_date")
-            url = override.get("url")
-
-            existing = conn.execute(
-                "SELECT promo_name FROM promotions WHERE promo_name = ?", (name,)
-            ).fetchone()
-
-            if existing:
-                sets, params = [], []
-                if start_date:
-                    sets.append("start_date = ?")
-                    params.append(start_date)
-                if end_date:
-                    sets.append("end_date = ?")
-                    params.append(end_date)
-                if url:
-                    sets.append("url = ?")
-                    params.append(url)
-                if sets:
-                    params.append(name)
-                    conn.execute(f"UPDATE promotions SET {', '.join(sets)} WHERE promo_name = ?", params)
-            elif start_date:
-                conn.execute(
-                    "INSERT INTO promotions (promo_name, start_date, end_date, last_seen_date, url) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (name, start_date, end_date, end_date or today, url),
-                )
-
-
-def get_all_promotions(db_path: str) -> list[dict]:
-    with _connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT promo_name, start_date, end_date, last_seen_date, url FROM promotions"
-        ).fetchall()
-        return [dict(r) for r in rows]
 
 
 def save_promotion_products(db_path: str, promo_name: str, products: list[dict]) -> None:
